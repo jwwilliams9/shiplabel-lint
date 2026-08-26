@@ -22,7 +22,12 @@ type Field struct {
 	Pos   Position
 }
 
-var allowedKeys = map[string]bool{
+// knownKeys are the fields this tool understands and validates. Fields
+// outside this set are passed through unvalidated unless --strict is
+// set, since real batch files often carry extra bookkeeping fields
+// (a carrier reference number, an internal note) that this tool has
+// no opinion about.
+var knownKeys = map[string]bool{
 	"to":      true,
 	"from":    true,
 	"weight":  true,
@@ -49,7 +54,10 @@ var validServices = map[string]bool{
 // the way. It never bails on the first problem: it collects every
 // error it finds so one run can report everything wrong with a file,
 // not just the first thing that broke.
-func ParseFile(filename string, data []byte) ([]Label, []*LabelError) {
+//
+// When strict is true, fields outside knownKeys are reported as
+// errors instead of being passed through.
+func ParseFile(filename string, data []byte, strict bool) ([]Label, []*LabelError) {
 	lines := strings.Split(string(data), "\n")
 
 	var labels []Label
@@ -113,12 +121,12 @@ func ParseFile(filename string, data []byte) ([]Label, []*LabelError) {
 			open = true
 		}
 
-		if !allowedKeys[key] {
+		if strict && !knownKeys[key] {
 			errs = append(errs, &LabelError{
 				File:       filename,
 				Pos:        Position{Line: lineNo, Col: keyStart + 1},
 				SourceLine: line,
-				Message:    fmt.Sprintf("unknown field %q (expected one of: to, from, weight, dims, service)", key),
+				Message:    fmt.Sprintf("unknown field %q rejected by --strict (expected one of: to, from, weight, dims, service)", key),
 			})
 			continue
 		}

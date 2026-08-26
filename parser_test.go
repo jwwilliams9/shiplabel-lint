@@ -12,7 +12,7 @@ func TestParseValidLabel(t *testing.T) {
 		"dims: 14x10x6 in\n" +
 		"service: priority\n"
 
-	labels, errs := ParseFile("t.labels", []byte(src))
+	labels, errs := ParseFile("t.labels", []byte(src), false)
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %v", errs)
 	}
@@ -45,7 +45,7 @@ func TestParseMultipleLabelsSeparatedByBlankLine(t *testing.T) {
 		"weight: 1 lb\n" +
 		"dims: 2x2x2 in\n"
 
-	labels, errs := ParseFile("t.labels", []byte(src))
+	labels, errs := ParseFile("t.labels", []byte(src), false)
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %v", errs)
 	}
@@ -67,7 +67,7 @@ func TestParseIgnoresCommentLines(t *testing.T) {
 		"weight: 3.2 lb\n" +
 		"dims: 14x10x6 in\n"
 
-	labels, errs := ParseFile("t.labels", []byte(src))
+	labels, errs := ParseFile("t.labels", []byte(src), false)
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %v", errs)
 	}
@@ -85,7 +85,7 @@ func TestParseHandlesCRLF(t *testing.T) {
 		"weight: 3.2 lb\r\n" +
 		"dims: 14x10x6 in\r\n"
 
-	labels, errs := ParseFile("t.labels", []byte(src))
+	labels, errs := ParseFile("t.labels", []byte(src), false)
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %v", errs)
 	}
@@ -95,7 +95,7 @@ func TestParseHandlesCRLF(t *testing.T) {
 }
 
 func TestParseMissingColon(t *testing.T) {
-	labels, errs := ParseFile("t.labels", []byte("hello world\n"))
+	labels, errs := ParseFile("t.labels", []byte("hello world\n"), false)
 	if len(labels) != 0 {
 		t.Fatalf("expected no labels, got %d", len(labels))
 	}
@@ -109,7 +109,7 @@ func TestParseMissingColon(t *testing.T) {
 }
 
 func TestParseEmptyFieldName(t *testing.T) {
-	_, errs := ParseFile("t.labels", []byte(" : value\n"))
+	_, errs := ParseFile("t.labels", []byte(" : value\n"), false)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d", len(errs))
 	}
@@ -122,14 +122,33 @@ func TestParseEmptyFieldName(t *testing.T) {
 	}
 }
 
-func TestParseUnknownField(t *testing.T) {
+func TestParseUnknownFieldAllowedByDefault(t *testing.T) {
 	src := "to: 742 Evergreen Terrace, Springfield, IL 62704\n" +
 		"from: 1 Amazon Way, Reno, NV 89501\n" +
 		"weight: 3.2 lb\n" +
 		"dims: 14x10x6 in\n" +
 		"carrier: fedex\n"
 
-	_, errs := ParseFile("t.labels", []byte(src))
+	labels, errs := ParseFile("t.labels", []byte(src), false)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %v", errs)
+	}
+	if len(labels) != 1 {
+		t.Fatalf("expected 1 label, got %d", len(labels))
+	}
+	if v := labels[0].Fields["carrier"].Value; v != "fedex" {
+		t.Errorf("expected unknown field to be kept as-is, got %q", v)
+	}
+}
+
+func TestParseUnknownFieldRejectedByStrict(t *testing.T) {
+	src := "to: 742 Evergreen Terrace, Springfield, IL 62704\n" +
+		"from: 1 Amazon Way, Reno, NV 89501\n" +
+		"weight: 3.2 lb\n" +
+		"dims: 14x10x6 in\n" +
+		"carrier: fedex\n"
+
+	_, errs := ParseFile("t.labels", []byte(src), true)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
@@ -149,7 +168,7 @@ func TestParseDuplicateField(t *testing.T) {
 		"weight: 3.2 lb\n" +
 		"dims: 14x10x6 in\n"
 
-	_, errs := ParseFile("t.labels", []byte(src))
+	_, errs := ParseFile("t.labels", []byte(src), false)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
@@ -163,7 +182,7 @@ func TestParseDuplicateField(t *testing.T) {
 }
 
 func TestParseMissingRequiredFields(t *testing.T) {
-	_, errs := ParseFile("t.labels", []byte("to: 742 Evergreen Terrace, Springfield, IL 62704\n"))
+	_, errs := ParseFile("t.labels", []byte("to: 742 Evergreen Terrace, Springfield, IL 62704\n"), false)
 	if len(errs) != 3 {
 		t.Fatalf("expected 3 errors (from, weight, dims), got %d: %v", len(errs), errs)
 	}
@@ -177,7 +196,7 @@ func TestParseMissingRequiredFields(t *testing.T) {
 func TestParseEmptyValueColumn(t *testing.T) {
 	// with no value after the colon, the caret should land right after
 	// the colon rather than past the end of the line.
-	_, errs := ParseFile("t.labels", []byte("to:\nfrom: 1 Amazon Way, Reno, NV 89501\nweight: 1 lb\ndims: 1x1x1 in\n"))
+	_, errs := ParseFile("t.labels", []byte("to:\nfrom: 1 Amazon Way, Reno, NV 89501\nweight: 1 lb\ndims: 1x1x1 in\n"), false)
 	var toErr *LabelError
 	for _, e := range errs {
 		if strings.Contains(e.Message, "address") {
@@ -282,7 +301,7 @@ func TestParseSampleFile(t *testing.T) {
 		"weight: 1.5lbs\n" +
 		"dims: 9x9x4 in\n"
 
-	labels, errs := ParseFile("sample.labels", []byte(src))
+	labels, errs := ParseFile("sample.labels", []byte(src), false)
 	if len(labels) != 2 {
 		t.Fatalf("expected 2 labels, got %d", len(labels))
 	}

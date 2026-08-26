@@ -38,10 +38,16 @@ Recognized fields:
 | `dims`    | yes      | `LxWxH` and a unit: `in` or `cm`              |
 | `service` | no       | one of `ground`, `priority`, `express`, `overnight` (defaults to `ground`) |
 
+Fields outside this list are left alone: a batch exported from some other
+system might carry a `carrier:` reference number or an internal `notes:`
+field, and this tool has no opinion on those. Run with `--strict` to reject
+anything outside the five fields above instead.
+
 ## Usage
 
 ```
 shiplabel-lint testdata/sample.labels
+shiplabel-lint --strict testdata/sample.labels
 ```
 
 `testdata/sample.labels` has one good label and one with two mistakes.
