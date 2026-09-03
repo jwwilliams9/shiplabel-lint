@@ -287,6 +287,111 @@ func TestValidateService(t *testing.T) {
 	}
 }
 
+func TestValidateWeightLimit(t *testing.T) {
+	cases := []struct {
+		value   string
+		service string
+		ok      bool
+	}{
+		{"70 lb", "priority", true},
+		{"80 lb", "priority", false},
+		{"150 lb", "ground", true},
+		{"151 lb", "ground", false},
+		{"80 kg", "ground", false}, // ~176 lb, over ground's 150 lb limit
+		{"2000 g", "priority", true},
+	}
+	for _, c := range cases {
+		err := validateWeightLimit(c.value, c.service)
+		if (err == nil) != c.ok {
+			t.Errorf("validateWeightLimit(%q, %q): got err=%v, want ok=%v", c.value, c.service, err, c.ok)
+		}
+	}
+}
+
+func TestValidateDimsLimit(t *testing.T) {
+	cases := []struct {
+		value   string
+		service string
+		ok      bool
+	}{
+		{"108x10x6 in", "ground", true},
+		{"109x10x6 in", "ground", false},
+		{"96x10x6 in", "overnight", true},
+		{"97x10x6 in", "overnight", false},
+		{"250x10x6 cm", "ground", true},  // ~98.4 in, under ground's 108 in limit
+		{"300x10x6 cm", "ground", false}, // ~118.1 in, over ground's 108 in limit
+	}
+	for _, c := range cases {
+		err := validateDimsLimit(c.value, c.service)
+		if (err == nil) != c.ok {
+			t.Errorf("validateDimsLimit(%q, %q): got err=%v, want ok=%v", c.value, c.service, err, c.ok)
+		}
+	}
+}
+
+func TestWeightExceedsServiceLimit(t *testing.T) {
+	src := "to: 742 Evergreen Terrace, Springfield, IL 62704\n" +
+		"from: 1 Amazon Way, Reno, NV 89501\n" +
+		"weight: 80 lb\n" +
+		"dims: 14x10x6 in\n" +
+		"service: priority\n"
+
+	_, errs := ParseFile("t.labels", []byte(src), false)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Message, "exceeds the priority limit of 70 lb") {
+		t.Errorf("unexpected message: %q", errs[0].Message)
+	}
+}
+
+func TestDimsExceedServiceLimit(t *testing.T) {
+	src := "to: 742 Evergreen Terrace, Springfield, IL 62704\n" +
+		"from: 1 Amazon Way, Reno, NV 89501\n" +
+		"weight: 3 lb\n" +
+		"dims: 120x10x6 in\n" +
+		"service: overnight\n"
+
+	_, errs := ParseFile("t.labels", []byte(src), false)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Message, "exceed the overnight limit of 96 in") {
+		t.Errorf("unexpected message: %q", errs[0].Message)
+	}
+}
+
+func TestWeightLimitDefaultsToGroundService(t *testing.T) {
+	src := "to: 742 Evergreen Terrace, Springfield, IL 62704\n" +
+		"from: 1 Amazon Way, Reno, NV 89501\n" +
+		"weight: 100 lb\n" +
+		"dims: 14x10x6 in\n"
+
+	_, errs := ParseFile("t.labels", []byte(src), false)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %v", errs)
+	}
+}
+
+func TestNoLimitCheckWhenServiceUnknown(t *testing.T) {
+	// service is garbage and already an error on its own; a weight that's
+	// way over every real limit shouldn't pile on a second, meaningless
+	// error about a service that doesn't exist.
+	src := "to: 742 Evergreen Terrace, Springfield, IL 62704\n" +
+		"from: 1 Amazon Way, Reno, NV 89501\n" +
+		"weight: 500 lb\n" +
+		"dims: 14x10x6 in\n" +
+		"service: teleport\n"
+
+	_, errs := ParseFile("t.labels", []byte(src), false)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Message, "unknown service") {
+		t.Errorf("unexpected message: %q", errs[0].Message)
+	}
+}
+
 func TestParseSampleFile(t *testing.T) {
 	// mirrors testdata/sample.labels: one good label, one with a bad
 	// address and a bad weight.

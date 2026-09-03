@@ -39,7 +39,7 @@ var requiredKeys = []string{"to", "from", "weight", "dims"}
 
 var (
 	weightRe = regexp.MustCompile(`^(\d+(\.\d+)?)\s*(lb|oz|kg|g)$`)
-	dimsRe   = regexp.MustCompile(`^\d+(\.\d+)?x\d+(\.\d+)?x\d+(\.\d+)?\s*(in|cm)$`)
+	dimsRe   = regexp.MustCompile(`^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)\s*(in|cm)$`)
 	zipRe    = regexp.MustCompile(`^\d{5}(-\d{4})?$`)
 )
 
@@ -48,6 +48,22 @@ var validServices = map[string]bool{
 	"priority":  true,
 	"express":   true,
 	"overnight": true,
+}
+
+// serviceLimit is the largest weight and longest single side a carrier
+// will take for a given service tier. These mirror the published limits
+// for a typical ground/air split (an air tier tops out lighter and
+// smaller than ground because it rides on a plane, not a truck).
+type serviceLimit struct {
+	maxWeightLb float64
+	maxDimIn    float64
+}
+
+var serviceLimits = map[string]serviceLimit{
+	"ground":    {maxWeightLb: 150, maxDimIn: 108},
+	"priority":  {maxWeightLb: 70, maxDimIn: 108},
+	"express":   {maxWeightLb: 150, maxDimIn: 108},
+	"overnight": {maxWeightLb: 70, maxDimIn: 96},
 }
 
 // ParseFile parses a batch of labels and validates every field along
@@ -183,19 +199,38 @@ func validateLabel(filename string, label Label, lines []string) []*LabelError {
 			errs = append(errs, fieldError(filename, f, lines, err))
 		}
 	}
+
+	// Service defaults to ground (the loosest limits) when the field is
+	// left out. If it's present but doesn't name a known service, that's
+	// already reported below, and there's no sensible limit to check
+	// weight and dims against, so the limit checks are skipped.
+	service := "ground"
+	serviceKnown := true
+	if f, ok := label.Fields["service"]; ok {
+		if err := validateService(f.Value); err != nil {
+			errs = append(errs, fieldError(filename, f, lines, err))
+			serviceKnown = false
+		} else {
+			service = strings.ToLower(f.Value)
+		}
+	}
+
 	if f, ok := label.Fields["weight"]; ok {
 		if err := validateWeight(f.Value); err != nil {
 			errs = append(errs, fieldError(filename, f, lines, err))
+		} else if serviceKnown {
+			if err := validateWeightLimit(f.Value, service); err != nil {
+				errs = append(errs, fieldError(filename, f, lines, err))
+			}
 		}
 	}
 	if f, ok := label.Fields["dims"]; ok {
 		if err := validateDims(f.Value); err != nil {
 			errs = append(errs, fieldError(filename, f, lines, err))
-		}
-	}
-	if f, ok := label.Fields["service"]; ok {
-		if err := validateService(f.Value); err != nil {
-			errs = append(errs, fieldError(filename, f, lines, err))
+		} else if serviceKnown {
+			if err := validateDimsLimit(f.Value, service); err != nil {
+				errs = append(errs, fieldError(filename, f, lines, err))
+			}
 		}
 	}
 
@@ -240,6 +275,56 @@ func validateDims(v string) error {
 		return fmt.Errorf("invalid dimensions %q: expected LENGTHxWIDTHxHEIGHT followed by a unit (in or cm), like \"12x8x6 in\"", v)
 	}
 	return nil
+}
+
+// validateWeightLimit checks a weight that has already passed
+// validateWeight against the given service's limit. It's called
+// separately so a malformed weight produces one format error instead
+// of a format error and a nonsensical limit error together.
+func validateWeightLimit(v, service string) error {
+	limit := serviceLimits[service]
+	m := weightRe.FindStringSubmatch(v)
+	amount, _ := strconv.ParseFloat(m[1], 64)
+	lbs := weightToPounds(amount, m[3])
+	if lbs > limit.maxWeightLb {
+		return fmt.Errorf("weight %q (%.2f lb) exceeds the %s limit of %g lb", v, lbs, service, limit.maxWeightLb)
+	}
+	return nil
+}
+
+// validateDimsLimit checks dims that have already passed validateDims
+// against the given service's longest-side limit.
+func validateDimsLimit(v, service string) error {
+	limit := serviceLimits[service]
+	m := dimsRe.FindStringSubmatch(v)
+	l, _ := strconv.ParseFloat(m[1], 64)
+	w, _ := strconv.ParseFloat(m[2], 64)
+	h, _ := strconv.ParseFloat(m[3], 64)
+	longestIn := dimToInches(max(l, w, h), m[4])
+	if longestIn > limit.maxDimIn {
+		return fmt.Errorf("dimensions %q (longest side %.1f in) exceed the %s limit of %g in", v, longestIn, service, limit.maxDimIn)
+	}
+	return nil
+}
+
+func weightToPounds(amount float64, unit string) float64 {
+	switch unit {
+	case "oz":
+		return amount / 16
+	case "kg":
+		return amount * 2.2046226218
+	case "g":
+		return amount * 2.2046226218 / 1000
+	default: // lb
+		return amount
+	}
+}
+
+func dimToInches(amount float64, unit string) float64 {
+	if unit == "cm" {
+		return amount / 2.54
+	}
+	return amount
 }
 
 func validateService(v string) error {

@@ -43,6 +43,25 @@ system might carry a `carrier:` reference number or an internal `notes:`
 field, and this tool has no opinion on those. Run with `--strict` to reject
 anything outside the five fields above instead.
 
+## Service limits
+
+Once `weight` and `dims` are individually well-formed, they're also checked
+against the limit for whatever `service` the label names (`ground` if the
+field is left out):
+
+| service     | max weight | max longest side |
+|-------------|-----------:|------------------:|
+| `ground`    |     150 lb |            108 in |
+| `priority`  |      70 lb |            108 in |
+| `express`   |     150 lb |            108 in |
+| `overnight` |      70 lb |             96 in |
+
+Weight and dimensions are converted to pounds and inches before the check,
+so a `weight: 80 kg` label is compared against the limit the same as an
+equivalent `weight: 176.4 lb` would be. If `service` itself doesn't name a
+known service, that's reported on its own and the weight/dims limit check
+is skipped for that label, since there's no limit to check against.
+
 ## Usage
 
 ```
