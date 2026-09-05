@@ -69,6 +69,19 @@ shiplabel-lint testdata/sample.labels
 shiplabel-lint --strict testdata/sample.labels
 ```
 
+You can also pass more than one file, or a directory, in a single run. A
+directory argument is walked for every `*.labels` file underneath it
+(directories starting with `.` are skipped), so a whole batch drop can be
+checked at once:
+
+```
+shiplabel-lint batch1.labels batch2.labels
+shiplabel-lint ./incoming/
+```
+
+Each file is reported independently with its own filename in every error,
+and the exit status reflects errors across all of them combined.
+
 `testdata/sample.labels` has one good label and one with two mistakes.
 Running the tool against it prints:
 
