@@ -69,6 +69,44 @@ shiplabel-lint testdata/sample.labels
 shiplabel-lint --strict testdata/sample.labels
 ```
 
+Pass `--json` to get the same information as structured data on stdout instead
+of the compiler-style text on stderr, for feeding into another tool instead of
+a terminal:
+
+```
+shiplabel-lint --json testdata/sample.labels
+```
+
+```json
+{
+  "files": [
+    {
+      "file": "testdata/sample.labels",
+      "ok": false,
+      "labels": 2,
+      "errors": [
+        {
+          "line": 7,
+          "col": 5,
+          "message": "address \"221B Baker St, London\" does not end with a valid US zip code (expected 5 digits or 5+4, like \"62704\" or \"62704-1234\")",
+          "source_line": "to: 221B Baker St, London"
+        },
+        {
+          "line": 9,
+          "col": 9,
+          "message": "invalid weight \"1.5lbs\": expected a number followed by a unit (lb, oz, kg, or g), like \"4.5 lb\"",
+          "source_line": "weight: 1.5lbs"
+        }
+      ]
+    }
+  ],
+  "error_count": 2
+}
+```
+
+The exit status is the same either way: 1 if any file has errors, 2 on usage
+or file errors.
+
 You can also pass more than one file, or a directory, in a single run. A
 directory argument is walked for every `*.labels` file underneath it
 (directories starting with `.` are skipped), so a whole batch drop can be
