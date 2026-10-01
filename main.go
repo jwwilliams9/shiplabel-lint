@@ -13,8 +13,9 @@ import (
 func main() {
 	strict := flag.Bool("strict", false, "reject any field other than to, from, weight, dims, service")
 	jsonOutput := flag.Bool("json", false, "report results as JSON on stdout instead of compiler-style text")
+	fix := flag.Bool("fix", false, "rewrite files in place to fix unit spacing and similar mechanical problems, then lint the result")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: shiplabel-lint [--strict] [--json] <file|dir> [file|dir ...]")
+		fmt.Fprintln(os.Stderr, "usage: shiplabel-lint [--strict] [--json] [--fix] <file|dir> [file|dir ...]")
 	}
 	flag.Parse()
 
@@ -45,6 +46,24 @@ func main() {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "shiplabel-lint: %v\n", err)
 			os.Exit(2)
+		}
+
+		if *fix {
+			fixed, fixes := FixSource(data)
+			if len(fixes) > 0 {
+				info, err := os.Stat(filename)
+				if err == nil {
+					err = os.WriteFile(filename, fixed, info.Mode().Perm())
+				}
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "shiplabel-lint: %v\n", err)
+					os.Exit(2)
+				}
+				for _, f := range fixes {
+					fmt.Fprintf(os.Stderr, "%s:%d:%d: fixed %s: %q -> %q\n", filename, f.Line, f.Col, f.Key, f.Old, f.New)
+				}
+				data = fixed
+			}
 		}
 
 		labels, errs := ParseFile(filename, data, *strict)

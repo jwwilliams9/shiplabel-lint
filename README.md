@@ -107,6 +107,18 @@ shiplabel-lint --json testdata/sample.labels
 The exit status is the same either way: 1 if any file has errors, 2 on usage
 or file errors.
 
+Pass `--fix` to rewrite the files in place before linting. It only touches
+`weight` and `dims` values that are currently invalid and that it can make
+valid without guessing: missing space before the unit (`3.2lb`), plural or
+upper-case units (`1.5lbs`, `4 KG`), and upper-case or spaced `x` in
+dimensions (`12 X 8 X 6in`). Each rewrite is printed to stderr with its
+position, and anything left over is reported as usual, so a value with no unit
+at all is still an error. Line endings and the rest of the file are kept.
+
+```
+shiplabel-lint --fix batch.labels
+```
+
 You can also pass more than one file, or a directory, in a single run. A
 directory argument is walked for every `*.labels` file underneath it
 (directories starting with `.` are skipped), so a whole batch drop can be
